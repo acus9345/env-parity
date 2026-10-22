@@ -1,6 +1,6 @@
 {
   "name": "@acus9345/env-parity",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared core for checking your env against .env.example: fails the build or dev-server start when a listed variable is missing or empty. Powers vite-plugin-env-parity and env-parity-plugin (Next.js, Webpack, Rspack, Rollup, Rolldown, Astro). Zero dependencies.",
   "keywords": [
     "env",
