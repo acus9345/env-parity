@@ -1,0 +1,68 @@
+{
+  "name": "@acus9345/env-parity",
+  "version": "0.1.0",
+  "description": "Shared core for checking your env against .env.example: fails the build or dev-server start when a listed variable is missing or empty. Powers vite-plugin-env-parity and env-parity-plugin (Next.js, Webpack, Rspack, Rollup, Rolldown, Astro). Zero dependencies.",
+  "keywords": [
+    "env",
+    "dotenv",
+    ".env",
+    ".env.example",
+    "environment-variables",
+    "validation",
+    "vite",
+    "nextjs",
+    "webpack",
+    "rspack",
+    "rollup",
+    "rolldown",
+    "astro",
+    "bundler",
+    "core"
+  ],
+  "homepage": "https://github.com/acus9345/env-parity#readme",
+  "bugs": {
+    "url": "https://github.com/acus9345/env-parity/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/acus9345/env-parity.git"
+  },
+  "license": "MIT",
+  "author": "acus9345 <acus9345@gmail.com>",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "prelint": "npm run build",
+    "lint": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
+    "test": "node --test \"test/*.test.ts\" \"test/*.test.mjs\"",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  }
+}
