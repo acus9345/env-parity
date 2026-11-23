@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
-import { checkEnv, findEnvUses, formatProblems } from "../dist/index.js";
+import { checkEnv, findEnvUses, formatProblems, resolveOptions, runCheck, scanSource } from "../dist/index.js";
 
 const dirs: string[] = [];
 after(() => {
@@ -27,6 +27,7 @@ describe("findEnvUses()", () => {
     const code = [
       "const a = process.env.API_URL;",
       'const b = process.env["TOKEN"] ?? process.env[`OTHER`];',
+      'const opt = process.env?.OPT_KEY ?? process?.env?.OPT_ALT ?? import.meta.env?.VITE_OPT ?? process.env?.["OPT_BRACKET"];',
       "const { DB_HOST, DB_PORT: port = '5432', ...rest } = process.env;",
       "const c = import.meta.env.VITE_KEY;",
       "// const old = process.env.COMMENTED_OUT;",
@@ -37,7 +38,7 @@ describe("findEnvUses()", () => {
     const { uses } = findEnvUses(code, "a.ts");
     assert.deepEqual(
       uses.map((u) => `${u.key}@${u.at}`).sort(),
-      ["AFTER_GLOB@a.ts:7", "API_URL@a.ts:1", "DB_HOST@a.ts:3", "DB_PORT@a.ts:3", "IN_TEMPLATE@a.ts:8", "OTHER@a.ts:2", "TOKEN@a.ts:2", "VITE_KEY@a.ts:4"],
+      ["AFTER_GLOB@a.ts:8", "API_URL@a.ts:1", "DB_HOST@a.ts:4", "DB_PORT@a.ts:4", "IN_TEMPLATE@a.ts:9", "OPT_ALT@a.ts:3", "OPT_BRACKET@a.ts:3", "OPT_KEY@a.ts:3", "OTHER@a.ts:2", "TOKEN@a.ts:2", "VITE_KEY@a.ts:5", "VITE_OPT@a.ts:3"],
     );
   });
 
@@ -79,7 +80,65 @@ describe("scan", () => {
     });
     assert.equal(checkEnv({ root, env, scan: { paths: ["src"] } }).ok, true);
     assert.equal(checkEnv({ root, env, scan: { exclude: ["scripts"] } }).ok, true);
+    assert.equal(checkEnv({ root, env, scan: { exclude: ["./scripts/"] } }).ok, true);
     assert.equal(checkEnv({ root, env, scan: true }).ok, false);
+  });
+
+  it("deduplicates overlapping paths, handles symlink loops, and scopes cache by root", () => {
+    const root = project({
+      "packages/app/src/a.ts": "process.env.API_URL;\n",
+    });
+    const appRoot = join(root, "packages", "app");
+    const overlapped = scanSource({ root: appRoot, paths: ["src", "src/a.ts"], exclude: [] });
+    assert.equal(overlapped.files, 1);
+    assert.deepEqual(overlapped.uses.map((u) => u.at), ["src/a.ts:1"]);
+
+    const fromParent = scanSource({ root, paths: ["packages/app/src"], exclude: [] });
+    assert.deepEqual(fromParent.uses.map((u) => u.at), ["packages/app/src/a.ts:1"]);
+
+    symlinkSync(appRoot, join(appRoot, "src", "loop"), "junction");
+    const withLoop = scanSource({ root: appRoot, paths: ["."], exclude: [] });
+    assert.equal(withLoop.files, 1);
+  });
+
+  it("does not suppress unexcluded directories after traversing an excluded symlinked alias", () => {
+    const root = project({
+      ".env.example": "KNOWN=\n",
+      "src/secret.ts": '"use client";\nprocess.env.UNDECLARED_SECRET;\n',
+    });
+    symlinkSync(join(root, "src"), join(root, "alias"), "junction");
+
+    for (const paths of [["alias", "src"], ["."]]) {
+      const r = checkEnv({
+        root,
+        env: { KNOWN: "synthetic" },
+        mode: "development",
+        framework: "next",
+        scan: { paths, exclude: ["alias/secret.ts"] },
+      });
+      assert.equal(r.ok, false);
+      assert.deepEqual(r.undeclared, [{ key: "UNDECLARED_SECRET", at: ["src/secret.ts:2"] }]);
+      assert.deepEqual(r.clientOnly, [{ key: "UNDECLARED_SECRET", at: ["src/secret.ts:2"] }]);
+    }
+
+    const opts = resolveOptions(
+      { mode: "development", scan: { paths: ["alias", "src"], exclude: ["alias/secret.ts"] } },
+      { name: "test-plugin", call: "envParity" },
+    );
+    const outcome = runCheck(
+      opts,
+      {
+        name: "test-plugin",
+        root,
+        mode: "development",
+        run: "build",
+        framework: "next",
+        hint: (o) => `envParity({ ${o} })`,
+        warn: () => {},
+      },
+      { KNOWN: "synthetic" },
+    );
+    assert.equal(outcome.error?.code, "ENV_MISMATCH");
   });
 
   it("warns about unused example variables when asked", () => {

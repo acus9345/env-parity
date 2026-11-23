@@ -17,7 +17,7 @@ export interface ParseResult {
   issues: ParseIssue[];
 }
 
-const LINE = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*=[ \t]*(.*)$/;
+const LINE = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*=(.*)$/;
 const QUOTES = new Set(["'", '"', "`"]);
 const ESCAPES: Record<string, string> = { n: "\n", r: "\r", t: "\t" };
 
@@ -63,7 +63,8 @@ export function parseEnvDetailed(text: string): ParseResult {
     }
 
     const key = match[1] as string;
-    const rest = match[2] ?? "";
+    const rawRest = match[2] ?? "";
+    const rest = rawRest.replace(/^[ \t]+/, "");
     const quote = rest[0];
 
     if (quote !== undefined && QUOTES.has(quote)) {
@@ -88,7 +89,7 @@ export function parseEnvDetailed(text: string): ParseResult {
       const raw = body.slice(0, end);
       values[key] = quote === '"' ? unescapeDouble(raw) : raw;
     } else {
-      values[key] = rest.replace(/\s+#.*$/, "").trim();
+      values[key] = rawRest.replace(/\s+#.*$/, "").trim();
     }
   }
 

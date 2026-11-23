@@ -108,4 +108,21 @@ describe("checkEnv()", () => {
     assert.deepEqual(checkEnv({ root, env: noEnv, mode: "development" }).empty, ["A"]);
     assert.equal(checkEnv({ root, env: noEnv, envFiles: [".env", ".env.{mode}.local"], mode: "production" }).ok, true);
   });
+
+  it("derives mode from options.env.NODE_ENV and falls back on empty string", () => {
+    const root = project({ ".env.example": "A=\n", ".env.staging": "A=stage\n", ".env.development": "A=dev\n" });
+    const staging = checkEnv({ root, env: { NODE_ENV: "staging" } });
+    assert.equal(staging.ok, true);
+    assert.deepEqual(staging.envFileNames, [".env", ".env.local", ".env.staging", ".env.staging.local"]);
+    const empty = checkEnv({ root, env: { NODE_ENV: "" } });
+    assert.equal(empty.ok, true);
+    assert.deepEqual(empty.envFileNames, [".env", ".env.local", ".env.development", ".env.development.local"]);
+  });
+
+  it("throws EnvParityError when given non-object options", () => {
+    assert.throws(
+      () => checkEnv(null as never),
+      (e: unknown) => e instanceof EnvParityError && e.code === "INVALID_OPTIONS" && /checkEnv\(\) expects an options object/.test(e.message),
+    );
+  });
 });

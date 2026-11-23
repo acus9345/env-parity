@@ -96,6 +96,13 @@ test("environment variables count and override files", () => {
   assert.deepEqual(check(root, { processEnv: { A: "" } }).empty, ["A", "B"]);
 });
 
+test("inherited properties on processEnv are not treated as set", () => {
+  const root = fixture({ ".env.example": "toString=\nconstructor=\n" });
+  const r = check(root, { processEnv: {} });
+  assert.deepEqual(r.missing, ["toString", "constructor"]);
+  assert.deepEqual(r.empty, []);
+});
+
 test("works with no env files at all (CI)", () => {
   const root = fixture({ ".env.example": "A=\n" });
   assert.equal(check(root, { processEnv: { A: "x" } }).ok, true);
@@ -156,6 +163,14 @@ test("UTF-16 env files fail, because loaders read them as garbage", () => {
   const text = formatProblems(r, { root, mode: "production", hint });
   assert.match(text, /Wrong encoding: \.env \(UTF-16 LE\)/);
   assert.match(text, /\[IO\.File\]::WriteAllLines\("\$PWD\\\.env", \(Get-Content \.env\)\)/);
+});
+
+test("odd-byte UTF-16 BE files do not crash", () => {
+  const oddBe = Buffer.from([0xfe, 0xff, 0x00, 0x41, 0x00, 0x3d, 0x00]);
+  const root = fixture({ ".env": oddBe, ".env.example": "A=\n" });
+  const r = check(root);
+  assert.deepEqual(r.badEncoding, [".env (UTF-16 BE)"]);
+  assert.deepEqual(r.missing, ["A"]);
 });
 
 test("UTF-8 BOM env files fail with an explanation", () => {

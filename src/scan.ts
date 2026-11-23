@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
 /** Where a variable is read in the source code. */
@@ -36,9 +36,9 @@ export const DEFAULT_SCAN_EXCLUDE: readonly string[] = [
 const MAX_FILE_SIZE = 1024 * 1024;
 
 const KEY = "[A-Za-z_][A-Za-z0-9_]*";
-const ENV_OBJECT = String.raw`(?:process\.env|import\.meta\.env)`;
-const DOT = new RegExp(String.raw`\b${ENV_OBJECT}\.(${KEY})\b`, "g");
-const BRACKET = new RegExp(String.raw`\b${ENV_OBJECT}\[\s*(["'\`])(${KEY})\1\s*\]`, "g");
+const ENV_OBJECT = String.raw`(?:process\??\.env|import\.meta\.env)`;
+const DOT = new RegExp(String.raw`\b${ENV_OBJECT}\??\.(${KEY})\b`, "g");
+const BRACKET = new RegExp(String.raw`\b${ENV_OBJECT}(?:\?\.)?\[\s*(["'\`])(${KEY})\1\s*\]`, "g");
 const DESTRUCTURE = new RegExp(String.raw`\{([^{}]*)\}\s*=\s*${ENV_OBJECT}\b`, "g");
 const DYNAMIC = new RegExp(String.raw`\bprocess\.env\[(?!\s*["'\`]${KEY}["'\`]\s*\])`, "g");
 const USE_CLIENT = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*["']use client["']/;
@@ -126,8 +126,13 @@ const cache = new Map<string, { mtimeMs: number; size: number; result: ReturnTyp
 /** Scans source files for env reads. Unchanged files are served from a cache, so watch-mode rebuilds stay fast. */
 export function scanSource(input: ScanInput): ScanResult {
   const root = resolve(input.root);
-  const skip = new Set(input.exclude.map((e) => e.replace(/[\\/]+$/, "").split(/[\\/]/).join("/")));
+  const skip = new Set(
+    input.exclude.map((e) => e.replace(/^(?:\.[\\/])+/, "").replace(/[\\/]+$/, "").split(/[\\/]/).join("/")),
+  );
   const isSkipped = (path: string, name: string) => skip.has(name) || skip.has(relative(root, path).split(sep).join("/"));
+  const visitedDirs = new Set<string>();
+  const activeDirs = new Set<string>();
+  const visitedFiles = new Set<string>();
   const result: ScanResult = { uses: [], dynamicClient: [], files: 0 };
 
   const visit = (path: string) => {
@@ -140,22 +145,44 @@ export function scanSource(input: ScanInput): ScanResult {
     const name = path.split(/[\\/]/).at(-1) ?? "";
     if (stat.isDirectory()) {
       if (path !== root && isSkipped(path, name)) return;
-      let entries: string[];
+      if (visitedDirs.has(path)) return;
+      let realDir: string;
       try {
-        entries = readdirSync(path);
+        realDir = realpathSync(path);
       } catch {
-        return;
+        realDir = path;
       }
-      for (const entry of entries.sort()) visit(join(path, entry));
+      if (activeDirs.has(realDir)) return;
+      visitedDirs.add(path);
+      activeDirs.add(realDir);
+      try {
+        let entries: string[];
+        try {
+          entries = readdirSync(path);
+        } catch {
+          return;
+        }
+        for (const entry of entries.sort()) visit(join(path, entry));
+      } finally {
+        activeDirs.delete(realDir);
+      }
       return;
     }
     if (!stat.isFile() || !SOURCE.test(name) || /\.d\.[cm]?ts$/.test(name) || /\.min\.js$/.test(name)) return;
-    if (stat.size > MAX_FILE_SIZE || isSkipped(path, name)) return;
+    if (stat.size > MAX_FILE_SIZE || isSkipped(path, name) || visitedFiles.has(path)) return;
+    visitedFiles.add(path);
     const rel = relative(root, path).split(sep).join("/");
-    let hit = cache.get(path);
+    const cacheKey = `${root}\0${path}`;
+    let hit = cache.get(cacheKey);
     if (!hit || hit.mtimeMs !== stat.mtimeMs || hit.size !== stat.size) {
-      hit = { mtimeMs: stat.mtimeMs, size: stat.size, result: findEnvUses(readFileSync(path, "utf8"), rel) };
-      cache.set(path, hit);
+      let code: string;
+      try {
+        code = readFileSync(path, "utf8");
+      } catch {
+        return;
+      }
+      hit = { mtimeMs: stat.mtimeMs, size: stat.size, result: findEnvUses(code, rel) };
+      cache.set(cacheKey, hit);
     }
     result.files++;
     result.uses.push(...hit.result.uses);

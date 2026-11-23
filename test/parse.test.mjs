@@ -26,10 +26,13 @@ test("supports export prefix and spaces around =", () => {
 });
 
 test("strips inline comments from unquoted values only", () => {
-  const env = parseEnv('A=1 # note\nB="x # y"\nC=a#b');
+  const env = parseEnv('A=1 # note\nB="x # y"\nC=a#b\nEMPTY= # comment\nTAB=\t# comment\nCOLOR=#ff0000');
   assert.equal(env.A, "1");
   assert.equal(env.B, "x # y");
   assert.equal(env.C, "a#b");
+  assert.equal(env.EMPTY, "");
+  assert.equal(env.TAB, "");
+  assert.equal(env.COLOR, "#ff0000");
 });
 
 test("handles all quote styles", () => {

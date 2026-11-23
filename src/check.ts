@@ -104,7 +104,7 @@ export function checkEnvParity(input: CheckInput): CheckResult {
   // Environment variables win over files.
   const merged: Record<string, string | undefined> = Object.assign(Object.create(null), fromFiles);
   for (const key of Object.keys(example)) {
-    const value = input.processEnv[key];
+    const value = Object.hasOwn(input.processEnv, key) ? input.processEnv[key] : undefined;
     if (value !== undefined) merged[key] = value;
   }
 
@@ -255,7 +255,8 @@ function readText(path: string, root: string): { text: string; encoding: Encodin
   }
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return { text: bytes.subarray(2).toString("utf16le"), encoding: "UTF-16 LE" };
   if (bytes[0] === 0xfe && bytes[1] === 0xff) {
-    const swapped = Buffer.from(bytes.subarray(2));
+    const body = bytes.subarray(2);
+    const swapped = Buffer.from(body.subarray(0, body.length - (body.length % 2)));
     swapped.swap16();
     return { text: swapped.toString("utf16le"), encoding: "UTF-16 BE" };
   }

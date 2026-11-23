@@ -44,9 +44,13 @@ export interface CheckEnvOptions extends Omit<EnvParityOptions, "failOn"> {
  * missing or an option is invalid.
  */
 export function checkEnv(options: CheckEnvOptions = {}): CheckResult {
+  if (options === null || typeof options !== "object" || Array.isArray(options)) {
+    resolveOptions(options, { name: "@acus9345/env-parity", call: "checkEnv" });
+  }
   const { root, env, framework, ...rest } = options;
   const opts = resolveOptions(rest, { name: "@acus9345/env-parity", call: "checkEnv" });
-  const mode = opts.mode ?? process.env.NODE_ENV ?? "development";
+  const processEnv = env ?? process.env;
+  const mode = opts.mode ?? (processEnv.NODE_ENV || "development");
   return checkEnvParity({
     root: root ?? process.cwd(),
     envDir: opts.envDir ?? ".",
@@ -55,7 +59,7 @@ export function checkEnv(options: CheckEnvOptions = {}): CheckResult {
     allowEmpty: opts.allowEmpty,
     reportExtra: opts.reportExtra,
     ignore: opts.ignore,
-    processEnv: env ?? process.env,
+    processEnv,
     scan: opts.scan,
     framework,
   });
